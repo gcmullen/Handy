@@ -55,7 +55,12 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
   };
 
   const getRecommendedBadge = (modelId: string): boolean => {
-    return modelId === "parakeet-tdt-0.6b-v3";
+    // Prefer V3 GPU if available (CUDA detected), otherwise V3 CPU
+    const hasV3GPU = availableModels.some((m) => m.id === "parakeet-v3-fp32");
+    if (hasV3GPU) {
+      return modelId === "parakeet-v3-fp32";
+    }
+    return modelId === "parakeet-v3-int8";
   };
 
   return (
@@ -89,7 +94,6 @@ const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
 
           {availableModels
             .filter((model) => !getRecommendedBadge(model.id))
-            .sort((a, b) => Number(a.size_mb) - Number(b.size_mb))
             .map((model) => (
               <ModelCard
                 key={model.id}

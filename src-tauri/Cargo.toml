@@ -30,7 +30,7 @@ serde = { version = "1", features = ["derive"] }
 
 [dependencies]
 once_cell = "1"
-tauri = { version = "2.9.1", features = [
+tauri = { version = "2.9", features = [
   "protocol-asset",
   "macos-private-api",
   "tray-icon",
@@ -68,7 +68,8 @@ chrono = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
 tar = "0.4.44"
 flate2 = "1.0"
-transcribe-rs = { version = "0.2.2", features = ["whisper", "parakeet", "moonshine"] }
+# Use forked transcribe-rs with CUDA support for Parakeet models
+transcribe-rs = { git = "https://github.com/gcmullen/transcribe-rs.git", branch = "main", features = ["parakeet", "moonshine", "whisper"] }
 handy-keys = "0.1.4"
 ferrous-opencc = "0.2.3"
 specta = "=2.0.0-rc.22"

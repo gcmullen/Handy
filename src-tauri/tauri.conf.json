@@ -4,9 +4,9 @@
   "version": "0.7.1",
   "identifier": "com.pais.handy",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -38,7 +38,7 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "resources": ["resources/**/*"],
     "license": "MIT",
     "icon": [
@@ -67,7 +67,9 @@
       }
     },
     "windows": {
-      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net/ -a CJ-Signing -c cjpais-dev -d Handy %1"
+      "nsis": {
+        "installerHooks": "./nsis/hooks.nsh"
+      }
     }
   },
   "plugins": {

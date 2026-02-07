@@ -9,6 +9,9 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
 
+  // Use relative paths for production builds to work with Tauri's asset protocol
+  base: "./",
+
   // Path aliases
   resolve: {
     alias: {

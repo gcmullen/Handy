@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.1] - 2026-02-06
+
+### Added
+
+- **Whisper model variants**: Whisper Small, Medium, Turbo, and Large models now available as engine options
+- **Parakeet V2/V3 with CPU and GPU variants**: CPU models use INT8 quantization for broad hardware support; GPU models use full-precision FP32 with CUDA acceleration (Windows only)
+- **HuggingFace download support**: GPU Parakeet models are downloaded as individual files from HuggingFace repositories
+- **NSIS installer**: Windows installer includes prerequisite checks for CUDA Toolkit and cuDNN, informing users about GPU requirements
+- **Runtime CUDA detection**: GPU Parakeet models only appear in the model selector when `CUDA_PATH` and `CUDNN_PATH` environment variables are set and valid
+- **Moonshine Base model**: Lightweight (58 MB), fast, English-only model option
+
+### Changed
+
+- **CUDA/cuDNN are now system prerequisites**: Not bundled with the installer, reducing installer size from ~2.2 GB to ~94 MB. Users install CUDA Toolkit 12.x and cuDNN 9.x separately for GPU model support
+- **Build target changed to NSIS-only on Windows**: Produces a single NSIS installer with prerequisite detection hooks
+- **Model dropdown ordering**: CPU Parakeets → GPU Parakeets → Whisper → Moonshine, with CPU models listed before GPU variants within each engine type
+- **Download progress**: Uses model size fallback when the server does not provide a Content-Length header
+
 ## [0.3.0] - 2025-07-11
 
 ### Added

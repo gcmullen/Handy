@@ -1,8 +1,13 @@
+#[cfg(unix)]
 use crate::actions::ACTION_MAP;
+#[cfg(unix)]
 use crate::ManagedToggleState;
+#[cfg(unix)]
 use log::{debug, info, warn};
+#[cfg(unix)]
 use std::thread;
-use tauri::{AppHandle, Manager};
+#[cfg(unix)]
+use tauri::AppHandle;
 
 #[cfg(unix)]
 use signal_hook::consts::SIGUSR2;

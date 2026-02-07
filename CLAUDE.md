@@ -68,7 +68,7 @@ Handy is a cross-platform desktop speech-to-text app built with Tauri 2.x (Rust 
 
 **Command-Event Architecture:** Frontend → Backend via Tauri commands; Backend → Frontend via events.
 
-**Pipeline Processing:** Audio → VAD → Whisper/Parakeet → Text output → Clipboard/Paste
+**Pipeline Processing:** Audio → VAD → Engine (Parakeet CPU/GPU, Whisper, or Moonshine) → Text output → Clipboard/Paste
 
 **State Flow:** Zustand → Tauri Command → Rust State → Persistence (tauri-plugin-store)
 
@@ -126,5 +126,5 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 ## Platform Notes
 
 - **macOS**: Metal acceleration, accessibility permissions required
-- **Windows**: Vulkan acceleration, code signing
+- **Windows**: Vulkan acceleration, code signing. CUDA Toolkit 12.x and cuDNN 9.x are system prerequisites for GPU Parakeet models (not bundled). Runtime detection checks `CUDA_PATH` and `CUDNN_PATH` env vars — GPU models only appear when both are set. ONNX Runtime CUDA DLLs are bundled in `src-tauri/resources/gpu-deps/`.
 - **Linux**: OpenBLAS + Vulkan, limited Wayland support, overlay disabled by default

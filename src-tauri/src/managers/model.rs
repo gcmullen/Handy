@@ -14,11 +14,64 @@ use std::sync::Mutex;
 use tar::Archive;
 use tauri::{AppHandle, Emitter, Manager};
 
+/// Check if NVIDIA CUDA Toolkit and cuDNN are available on the system.
+///
+/// Requires both `CUDA_PATH` and `CUDNN_PATH` environment variables to be set
+/// and pointing to valid directories. These are set by the NVIDIA installers.
+#[cfg(target_os = "windows")]
+pub fn is_cuda_available() -> bool {
+    use std::path::Path;
+
+    let cuda_path = match std::env::var("CUDA_PATH") {
+        Ok(p) if Path::new(&p).exists() => {
+            info!("CUDA_PATH found: {}", p);
+            p
+        }
+        Ok(p) => {
+            warn!("CUDA_PATH is set but directory does not exist: {}", p);
+            return false;
+        }
+        Err(_) => {
+            info!("CUDA_PATH not set — GPU Parakeet models will be hidden");
+            return false;
+        }
+    };
+
+    let cudnn_path = match std::env::var("CUDNN_PATH") {
+        Ok(p) if Path::new(&p).exists() => {
+            info!("CUDNN_PATH found: {}", p);
+            p
+        }
+        Ok(p) => {
+            warn!("CUDNN_PATH is set but directory does not exist: {}", p);
+            return false;
+        }
+        Err(_) => {
+            warn!(
+                "CUDNN_PATH not set — GPU Parakeet models require cuDNN. CUDA_PATH is: {}",
+                cuda_path
+            );
+            return false;
+        }
+    };
+
+    info!(
+        "CUDA + cuDNN detected — GPU models enabled (CUDA: {}, cuDNN: {})",
+        cuda_path, cudnn_path
+    );
+    true
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_cuda_available() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum EngineType {
-    Whisper,
     Parakeet,
     Moonshine,
+    Whisper,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -28,6 +81,10 @@ pub struct ModelInfo {
     pub description: String,
     pub filename: String,
     pub url: Option<String>,
+    /// HuggingFace repo for multi-file downloads (e.g. "istupakov/parakeet-tdt-0.6b-v3-onnx")
+    pub hf_repo: Option<String>,
+    /// List of files to download from the HuggingFace repo
+    pub hf_files: Option<Vec<String>>,
     pub size_mb: u64,
     pub is_downloaded: bool,
     pub is_downloading: bool,
@@ -67,113 +124,57 @@ impl ModelManager {
 
         let mut available_models = HashMap::new();
 
-        // TODO this should be read from a JSON file or something..
-        available_models.insert(
-            "small".to_string(),
-            ModelInfo {
-                id: "small".to_string(),
-                name: "Whisper Small".to_string(),
-                description: "Fast and fairly accurate.".to_string(),
-                filename: "ggml-small.bin".to_string(),
-                url: Some("https://blob.handy.computer/ggml-small.bin".to_string()),
-                size_mb: 487,
-                is_downloaded: false,
-                is_downloading: false,
-                partial_size: 0,
-                is_directory: false,
-                engine_type: EngineType::Whisper,
-                accuracy_score: 0.60,
-                speed_score: 0.85,
-            },
-        );
+        // Detect CUDA availability for GPU models
+        let cuda_available = is_cuda_available();
+        if cuda_available {
+            info!("CUDA + cuDNN detected — GPU Parakeet models will be available");
+        } else {
+            info!("CUDA not detected — only CPU and Whisper models will be shown");
+        }
 
-        // Add downloadable models
-        available_models.insert(
-            "medium".to_string(),
-            ModelInfo {
-                id: "medium".to_string(),
-                name: "Whisper Medium".to_string(),
-                description: "Good accuracy, medium speed".to_string(),
-                filename: "whisper-medium-q4_1.bin".to_string(),
-                url: Some("https://blob.handy.computer/whisper-medium-q4_1.bin".to_string()),
-                size_mb: 492, // Approximate size
-                is_downloaded: false,
-                is_downloading: false,
-                partial_size: 0,
-                is_directory: false,
-                engine_type: EngineType::Whisper,
-                accuracy_score: 0.75,
-                speed_score: 0.60,
-            },
-        );
+        // Parakeet V2 GPU - requires CUDA + cuDNN
+        if cuda_available {
+            available_models.insert(
+                "parakeet-v2-fp32".to_string(),
+                ModelInfo {
+                    id: "parakeet-v2-fp32".to_string(),
+                    name: "Parakeet V2 (GPU)".to_string(),
+                    description: "English only. Full precision, fastest on GPU.".to_string(),
+                    filename: "parakeet-tdt-0.6b-v2-fp32".to_string(),
+                    url: None,
+                    hf_repo: Some("istupakov/parakeet-tdt-0.6b-v2-onnx".to_string()),
+                    hf_files: Some(vec![
+                        "encoder-model.onnx".to_string(),
+                        "encoder-model.onnx.data".to_string(),
+                        "decoder_joint-model.onnx".to_string(),
+                        "nemo128.onnx".to_string(),
+                        "vocab.txt".to_string(),
+                        "config.json".to_string(),
+                    ]),
+                    size_mb: 2500,
+                    is_downloaded: false,
+                    is_downloading: false,
+                    partial_size: 0,
+                    is_directory: true,
+                    engine_type: EngineType::Parakeet,
+                    accuracy_score: 0.85,
+                    speed_score: 0.95,
+                },
+            );
+        }
 
+        // Parakeet V2 CPU - always available
         available_models.insert(
-            "turbo".to_string(),
+            "parakeet-v2-int8".to_string(),
             ModelInfo {
-                id: "turbo".to_string(),
-                name: "Whisper Turbo".to_string(),
-                description: "Balanced accuracy and speed.".to_string(),
-                filename: "ggml-large-v3-turbo.bin".to_string(),
-                url: Some("https://blob.handy.computer/ggml-large-v3-turbo.bin".to_string()),
-                size_mb: 1600, // Approximate size
-                is_downloaded: false,
-                is_downloading: false,
-                partial_size: 0,
-                is_directory: false,
-                engine_type: EngineType::Whisper,
-                accuracy_score: 0.80,
-                speed_score: 0.40,
-            },
-        );
-
-        available_models.insert(
-            "large".to_string(),
-            ModelInfo {
-                id: "large".to_string(),
-                name: "Whisper Large".to_string(),
-                description: "Good accuracy, but slow.".to_string(),
-                filename: "ggml-large-v3-q5_0.bin".to_string(),
-                url: Some("https://blob.handy.computer/ggml-large-v3-q5_0.bin".to_string()),
-                size_mb: 1100, // Approximate size
-                is_downloaded: false,
-                is_downloading: false,
-                partial_size: 0,
-                is_directory: false,
-                engine_type: EngineType::Whisper,
-                accuracy_score: 0.85,
-                speed_score: 0.30,
-            },
-        );
-
-        // Add NVIDIA Parakeet models (directory-based)
-        available_models.insert(
-            "parakeet-tdt-0.6b-v2".to_string(),
-            ModelInfo {
-                id: "parakeet-tdt-0.6b-v2".to_string(),
-                name: "Parakeet V2".to_string(),
-                description: "English only. The best model for English speakers.".to_string(),
-                filename: "parakeet-tdt-0.6b-v2-int8".to_string(), // Directory name
+                id: "parakeet-v2-int8".to_string(),
+                name: "Parakeet V2 (CPU)".to_string(),
+                description: "English only. Quantized for CPU inference.".to_string(),
+                filename: "parakeet-tdt-0.6b-v2-int8".to_string(),
                 url: Some("https://blob.handy.computer/parakeet-v2-int8.tar.gz".to_string()),
-                size_mb: 473, // Approximate size for int8 quantized model
-                is_downloaded: false,
-                is_downloading: false,
-                partial_size: 0,
-                is_directory: true,
-                engine_type: EngineType::Parakeet,
-                accuracy_score: 0.85,
-                speed_score: 0.85,
-            },
-        );
-
-        available_models.insert(
-            "parakeet-tdt-0.6b-v3".to_string(),
-            ModelInfo {
-                id: "parakeet-tdt-0.6b-v3".to_string(),
-                name: "Parakeet V3".to_string(),
-                description: "Fast and accurate".to_string(),
-                filename: "parakeet-tdt-0.6b-v3-int8".to_string(), // Directory name
-                url: Some("https://blob.handy.computer/parakeet-v3-int8.tar.gz".to_string()),
-                size_mb: 478, // Approximate size for int8 quantized model
+                hf_repo: None,
+                hf_files: None,
+                size_mb: 661,
                 is_downloaded: false,
                 is_downloading: false,
                 partial_size: 0,
@@ -184,6 +185,60 @@ impl ModelManager {
             },
         );
 
+        // Parakeet V3 GPU - requires CUDA + cuDNN
+        if cuda_available {
+            available_models.insert(
+                "parakeet-v3-fp32".to_string(),
+                ModelInfo {
+                    id: "parakeet-v3-fp32".to_string(),
+                    name: "Parakeet V3 (GPU)".to_string(),
+                    description: "25 languages. Full precision, fastest on GPU.".to_string(),
+                    filename: "parakeet-tdt-0.6b-v3-fp32".to_string(),
+                    url: None,
+                    hf_repo: Some("istupakov/parakeet-tdt-0.6b-v3-onnx".to_string()),
+                    hf_files: Some(vec![
+                        "encoder-model.onnx".to_string(),
+                        "encoder-model.onnx.data".to_string(),
+                        "decoder_joint-model.onnx".to_string(),
+                        "nemo128.onnx".to_string(),
+                        "vocab.txt".to_string(),
+                        "config.json".to_string(),
+                    ]),
+                    size_mb: 2550,
+                    is_downloaded: false,
+                    is_downloading: false,
+                    partial_size: 0,
+                    is_directory: true,
+                    engine_type: EngineType::Parakeet,
+                    accuracy_score: 0.85,
+                    speed_score: 0.95,
+                },
+            );
+        }
+
+        // Parakeet V3 CPU - always available
+        available_models.insert(
+            "parakeet-v3-int8".to_string(),
+            ModelInfo {
+                id: "parakeet-v3-int8".to_string(),
+                name: "Parakeet V3 (CPU)".to_string(),
+                description: "25 languages. Quantized for CPU inference.".to_string(),
+                filename: "parakeet-tdt-0.6b-v3-int8".to_string(),
+                url: Some("https://blob.handy.computer/parakeet-v3-int8.tar.gz".to_string()),
+                hf_repo: None,
+                hf_files: None,
+                size_mb: 478,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::Parakeet,
+                accuracy_score: 0.80,
+                speed_score: 0.85,
+            },
+        );
+
+        // Moonshine
         available_models.insert(
             "moonshine-base".to_string(),
             ModelInfo {
@@ -192,6 +247,8 @@ impl ModelManager {
                 description: "Very fast, English only. Handles accents well.".to_string(),
                 filename: "moonshine-base".to_string(),
                 url: Some("https://blob.handy.computer/moonshine-base.tar.gz".to_string()),
+                hf_repo: None,
+                hf_files: None,
                 size_mb: 58,
                 is_downloaded: false,
                 is_downloading: false,
@@ -200,6 +257,91 @@ impl ModelManager {
                 engine_type: EngineType::Moonshine,
                 accuracy_score: 0.70,
                 speed_score: 0.90,
+            },
+        );
+
+        // Whisper models (single .bin files, GPU via Vulkan)
+        available_models.insert(
+            "whisper-small".to_string(),
+            ModelInfo {
+                id: "whisper-small".to_string(),
+                name: "Whisper Small".to_string(),
+                description: "Multilingual. Good balance of speed and accuracy.".to_string(),
+                filename: "ggml-small.bin".to_string(),
+                url: Some("https://blob.handy.computer/ggml-small.bin".to_string()),
+                hf_repo: None,
+                hf_files: None,
+                size_mb: 487,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::Whisper,
+                accuracy_score: 0.75,
+                speed_score: 0.75,
+            },
+        );
+
+        available_models.insert(
+            "whisper-medium".to_string(),
+            ModelInfo {
+                id: "whisper-medium".to_string(),
+                name: "Whisper Medium".to_string(),
+                description: "Multilingual. Quantized for faster inference.".to_string(),
+                filename: "whisper-medium-q4_1.bin".to_string(),
+                url: Some("https://blob.handy.computer/whisper-medium-q4_1.bin".to_string()),
+                hf_repo: None,
+                hf_files: None,
+                size_mb: 492,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::Whisper,
+                accuracy_score: 0.82,
+                speed_score: 0.70,
+            },
+        );
+
+        available_models.insert(
+            "whisper-turbo".to_string(),
+            ModelInfo {
+                id: "whisper-turbo".to_string(),
+                name: "Whisper Turbo".to_string(),
+                description: "Multilingual. Large v3 Turbo for best speed/accuracy.".to_string(),
+                filename: "ggml-large-v3-turbo.bin".to_string(),
+                url: Some("https://blob.handy.computer/ggml-large-v3-turbo.bin".to_string()),
+                hf_repo: None,
+                hf_files: None,
+                size_mb: 1600,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::Whisper,
+                accuracy_score: 0.90,
+                speed_score: 0.80,
+            },
+        );
+
+        available_models.insert(
+            "whisper-large".to_string(),
+            ModelInfo {
+                id: "whisper-large".to_string(),
+                name: "Whisper Large".to_string(),
+                description: "Multilingual. Highest accuracy, quantized.".to_string(),
+                filename: "ggml-large-v3-q5_0.bin".to_string(),
+                url: Some("https://blob.handy.computer/ggml-large-v3-q5_0.bin".to_string()),
+                hf_repo: None,
+                hf_files: None,
+                size_mb: 1100,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::Whisper,
+                accuracy_score: 0.95,
+                speed_score: 0.60,
             },
         );
 
@@ -223,7 +365,19 @@ impl ModelManager {
 
     pub fn get_available_models(&self) -> Vec<ModelInfo> {
         let models = self.available_models.lock().unwrap();
-        models.values().cloned().collect()
+        let mut result: Vec<ModelInfo> = models.values().cloned().collect();
+        result.sort_by_key(|m| {
+            let engine_order = match m.engine_type {
+                EngineType::Parakeet => 0,
+                EngineType::Whisper => 1,
+                EngineType::Moonshine => 2,
+            };
+            // Within Parakeet: V2 before V3, GPU (fp32) before CPU (int8)
+            let version_order = if m.id.contains("v2") { 0 } else { 1 };
+            let variant_order = if m.id.contains("fp32") { 0 } else { 1 };
+            (engine_order, version_order, variant_order, m.name.clone())
+        });
+        result
     }
 
     pub fn get_model_info(&self, model_id: &str) -> Option<ModelInfo> {
@@ -340,8 +494,18 @@ impl ModelManager {
         let model_info =
             model_info.ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
 
+        // HuggingFace multi-file download path
+        if let (Some(ref hf_repo), Some(ref hf_files)) =
+            (model_info.hf_repo.clone(), model_info.hf_files.clone())
+        {
+            return self
+                .download_model_from_hf(model_id, &model_info, &hf_repo, &hf_files)
+                .await;
+        }
+
         let url = model_info
             .url
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("No download URL for model"))?;
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
@@ -421,11 +585,17 @@ impl ModelManager {
             ));
         }
 
-        let total_size = if resume_from > 0 {
-            // For resumed downloads, add the resume point to content length
+        let server_total = if resume_from > 0 {
             resume_from + response.content_length().unwrap_or(0)
         } else {
             response.content_length().unwrap_or(0)
+        };
+        // Use server Content-Length when available; fall back to model's known size for progress
+        let has_exact_total = server_total > 0;
+        let total_size = if has_exact_total {
+            server_total
+        } else {
+            model_info.size_mb * 1_000_000
         };
 
         let mut downloaded = resume_from;
@@ -472,11 +642,15 @@ impl ModelManager {
             file.write_all(&chunk)?;
             downloaded += chunk.len() as u64;
 
-            let percentage = if total_size > 0 {
+            let mut percentage = if total_size > 0 {
                 (downloaded as f64 / total_size as f64) * 100.0
             } else {
                 0.0
             };
+            // Cap at 99% when using estimated size to avoid premature 100%
+            if !has_exact_total && percentage > 99.0 {
+                percentage = 99.0;
+            }
 
             // Emit progress event
             let progress = DownloadProgress {
@@ -492,11 +666,10 @@ impl ModelManager {
         file.flush()?;
         drop(file); // Ensure file is closed before moving
 
-        // Verify downloaded file size matches expected size
-        if total_size > 0 {
+        // Only verify size when server provided exact Content-Length
+        if has_exact_total {
             let actual_size = partial_path.metadata()?.len();
             if actual_size != total_size {
-                // Download is incomplete/corrupted - delete partial and return error
                 let _ = fs::remove_file(&partial_path);
                 {
                     let mut models = self.available_models.lock().unwrap();
@@ -604,6 +777,169 @@ impl ModelManager {
             model_id, model_path
         );
 
+        Ok(())
+    }
+
+    /// Download a model from HuggingFace by fetching individual files into a directory.
+    async fn download_model_from_hf(
+        &self,
+        model_id: &str,
+        model_info: &ModelInfo,
+        hf_repo: &str,
+        hf_files: &[String],
+    ) -> Result<()> {
+        let model_dir = self.models_dir.join(&model_info.filename);
+
+        // Don't download if already exists
+        if model_dir.exists() && model_dir.is_dir() {
+            self.update_download_status()?;
+            return Ok(());
+        }
+
+        // Mark as downloading
+        {
+            let mut models = self.available_models.lock().unwrap();
+            if let Some(model) = models.get_mut(model_id) {
+                model.is_downloading = true;
+            }
+        }
+
+        // Create the model directory
+        fs::create_dir_all(&model_dir)?;
+
+        let client = reqwest::Client::new();
+
+        // Calculate total size across all files for progress tracking
+        // First pass: get content lengths
+        let mut file_sizes: Vec<u64> = Vec::new();
+        for filename in hf_files {
+            let url = format!(
+                "https://huggingface.co/{}/resolve/main/{}",
+                hf_repo, filename
+            );
+            let resp = client.head(&url).send().await;
+            let size = resp
+                .ok()
+                .and_then(|r| r.content_length())
+                .unwrap_or(0);
+            file_sizes.push(size);
+        }
+        let server_total: u64 = file_sizes.iter().sum();
+        let has_exact_total = server_total > 0;
+        let total_size = if has_exact_total {
+            server_total
+        } else {
+            model_info.size_mb * 1_000_000
+        };
+        let mut total_downloaded: u64 = 0;
+
+        info!(
+            "Downloading {} files from HuggingFace repo {} (total: {} MB)",
+            hf_files.len(),
+            hf_repo,
+            total_size / 1_000_000
+        );
+
+        // Download each file
+        for (i, filename) in hf_files.iter().enumerate() {
+            let url = format!(
+                "https://huggingface.co/{}/resolve/main/{}",
+                hf_repo, filename
+            );
+            let dest_path = model_dir.join(filename);
+
+            // Skip if file already exists with correct size
+            if dest_path.exists() {
+                let existing_size = dest_path.metadata().map(|m| m.len()).unwrap_or(0);
+                if existing_size == file_sizes[i] && existing_size > 0 {
+                    info!("Skipping {} (already downloaded)", filename);
+                    total_downloaded += existing_size;
+                    continue;
+                }
+            }
+
+            info!("Downloading [{}/{}]: {}", i + 1, hf_files.len(), filename);
+
+            let response = client.get(&url).send().await.map_err(|e| {
+                let _ = self.cleanup_failed_hf_download(model_id, &model_dir);
+                anyhow::anyhow!("Failed to download {}: {}", filename, e)
+            })?;
+
+            if !response.status().is_success() {
+                let _ = self.cleanup_failed_hf_download(model_id, &model_dir);
+                return Err(anyhow::anyhow!(
+                    "Failed to download {}: HTTP {}",
+                    filename,
+                    response.status()
+                ));
+            }
+
+            let mut stream = response.bytes_stream();
+            let mut file = fs::File::create(&dest_path).map_err(|e| {
+                let _ = self.cleanup_failed_hf_download(model_id, &model_dir);
+                anyhow::anyhow!("Failed to create file {}: {}", filename, e)
+            })?;
+
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|e| {
+                    let _ = self.cleanup_failed_hf_download(model_id, &model_dir);
+                    anyhow::anyhow!("Download error for {}: {}", filename, e)
+                })?;
+
+                file.write_all(&chunk)?;
+                total_downloaded += chunk.len() as u64;
+
+                let mut percentage = if total_size > 0 {
+                    (total_downloaded as f64 / total_size as f64) * 100.0
+                } else {
+                    0.0
+                };
+                if !has_exact_total && percentage > 99.0 {
+                    percentage = 99.0;
+                }
+
+                let _ = self.app_handle.emit(
+                    "model-download-progress",
+                    &DownloadProgress {
+                        model_id: model_id.to_string(),
+                        downloaded: total_downloaded,
+                        total: total_size,
+                        percentage,
+                    },
+                );
+            }
+
+            file.flush()?;
+            info!("Completed: {}", filename);
+        }
+
+        // Update download status
+        {
+            let mut models = self.available_models.lock().unwrap();
+            if let Some(model) = models.get_mut(model_id) {
+                model.is_downloading = false;
+                model.is_downloaded = true;
+                model.partial_size = 0;
+            }
+        }
+
+        let _ = self.app_handle.emit("model-download-complete", model_id);
+
+        info!(
+            "Successfully downloaded model {} from HuggingFace to {:?}",
+            model_id, model_dir
+        );
+
+        Ok(())
+    }
+
+    fn cleanup_failed_hf_download(&self, model_id: &str, model_dir: &PathBuf) -> Result<()> {
+        let mut models = self.available_models.lock().unwrap();
+        if let Some(model) = models.get_mut(model_id) {
+            model.is_downloading = false;
+        }
+        drop(models);
+        let _ = fs::remove_dir_all(model_dir);
         Ok(())
     }
 
