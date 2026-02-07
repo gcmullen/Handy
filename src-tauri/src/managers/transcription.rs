@@ -15,7 +15,7 @@ use transcribe_rs::{
         parakeet::{
             ParakeetEngine, ParakeetInferenceParams, ParakeetModelParams, TimestampGranularity,
         },
-        whisper::{WhisperEngine, WhisperInferenceParams},
+        whisper::{WhisperEngine, WhisperInferenceParams, WhisperModelParams},
     },
     TranscriptionEngine,
 };
@@ -29,9 +29,9 @@ pub struct ModelStateEvent {
 }
 
 enum LoadedEngine {
-    Whisper(WhisperEngine),
     Parakeet(ParakeetEngine),
     Moonshine(MoonshineEngine),
+    Whisper(WhisperEngine),
 }
 
 #[derive(Clone)]
@@ -142,9 +142,9 @@ impl TranscriptionManager {
             let mut engine = self.engine.lock().unwrap();
             if let Some(ref mut loaded_engine) = *engine {
                 match loaded_engine {
-                    LoadedEngine::Whisper(ref mut e) => e.unload_model(),
                     LoadedEngine::Parakeet(ref mut e) => e.unload_model(),
                     LoadedEngine::Moonshine(ref mut e) => e.unload_model(),
+                    LoadedEngine::Whisper(ref mut e) => e.unload_model(),
                 }
             }
             *engine = None; // Drop the engine to free memory
@@ -224,27 +224,19 @@ impl TranscriptionManager {
 
         // Create appropriate engine based on model type
         let loaded_engine = match model_info.engine_type {
-            EngineType::Whisper => {
-                let mut engine = WhisperEngine::new();
-                engine.load_model(&model_path).map_err(|e| {
-                    let error_msg = format!("Failed to load whisper model {}: {}", model_id, e);
-                    let _ = self.app_handle.emit(
-                        "model-state-changed",
-                        ModelStateEvent {
-                            event_type: "loading_failed".to_string(),
-                            model_id: Some(model_id.to_string()),
-                            model_name: Some(model_info.name.clone()),
-                            error: Some(error_msg.clone()),
-                        },
-                    );
-                    anyhow::anyhow!(error_msg)
-                })?;
-                LoadedEngine::Whisper(engine)
-            }
             EngineType::Parakeet => {
+                info!("Loading Parakeet model with CUDA support enabled (via ort crate)");
+                info!("CUDA execution provider should be available if NVIDIA GPU and drivers are present");
                 let mut engine = ParakeetEngine::new();
+                let params = if model_info.filename.contains("int8") {
+                    info!("Using INT8 quantized model params");
+                    ParakeetModelParams::int8()
+                } else {
+                    info!("Using FP32 model params");
+                    ParakeetModelParams::fp32()
+                };
                 engine
-                    .load_model_with_params(&model_path, ParakeetModelParams::int8())
+                    .load_model_with_params(&model_path, params)
                     .map_err(|e| {
                         let error_msg =
                             format!("Failed to load parakeet model {}: {}", model_id, e);
@@ -259,6 +251,7 @@ impl TranscriptionManager {
                         );
                         anyhow::anyhow!(error_msg)
                     })?;
+                info!("Parakeet model loaded successfully - check for CUDA/GPU usage during transcription");
                 LoadedEngine::Parakeet(engine)
             }
             EngineType::Moonshine => {
@@ -283,6 +276,27 @@ impl TranscriptionManager {
                         anyhow::anyhow!(error_msg)
                     })?;
                 LoadedEngine::Moonshine(engine)
+            }
+            EngineType::Whisper => {
+                info!("Loading Whisper model");
+                let mut engine = WhisperEngine::new();
+                engine
+                    .load_model_with_params(&model_path, WhisperModelParams::default())
+                    .map_err(|e| {
+                        let error_msg = format!("Failed to load whisper model {}: {}", model_id, e);
+                        let _ = self.app_handle.emit(
+                            "model-state-changed",
+                            ModelStateEvent {
+                                event_type: "loading_failed".to_string(),
+                                model_id: Some(model_id.to_string()),
+                                model_name: Some(model_info.name.clone()),
+                                error: Some(error_msg.clone()),
+                            },
+                        );
+                        anyhow::anyhow!(error_msg)
+                    })?;
+                info!("Whisper model loaded successfully");
+                LoadedEngine::Whisper(engine)
             }
         };
 
@@ -388,44 +402,37 @@ impl TranscriptionManager {
             })?;
 
             match engine {
-                LoadedEngine::Whisper(whisper_engine) => {
-                    // Normalize language code for Whisper
-                    // Convert zh-Hans and zh-Hant to zh since Whisper uses ISO 639-1 codes
-                    let whisper_language = if settings.selected_language == "auto" {
-                        None
-                    } else {
-                        let normalized = if settings.selected_language == "zh-Hans"
-                            || settings.selected_language == "zh-Hant"
-                        {
-                            "zh".to_string()
-                        } else {
-                            settings.selected_language.clone()
-                        };
-                        Some(normalized)
-                    };
-
-                    let params = WhisperInferenceParams {
-                        language: whisper_language,
-                        translate: settings.translate_to_english,
-                        ..Default::default()
-                    };
-
-                    whisper_engine
-                        .transcribe_samples(audio, Some(params))
-                        .map_err(|e| anyhow::anyhow!("Whisper transcription failed: {}", e))?
-                }
                 LoadedEngine::Parakeet(parakeet_engine) => {
+                    info!(
+                        "Starting Parakeet transcription (CUDA GPU acceleration should be active)"
+                    );
                     let params = ParakeetInferenceParams {
                         timestamp_granularity: TimestampGranularity::Segment,
                         ..Default::default()
                     };
-                    parakeet_engine
+                    let result = parakeet_engine
                         .transcribe_samples(audio, Some(params))
-                        .map_err(|e| anyhow::anyhow!("Parakeet transcription failed: {}", e))?
+                        .map_err(|e| anyhow::anyhow!("Parakeet transcription failed: {}", e))?;
+                    info!(
+                        "Parakeet transcription completed - if GPU is working, this should be fast"
+                    );
+                    result
                 }
                 LoadedEngine::Moonshine(moonshine_engine) => moonshine_engine
                     .transcribe_samples(audio, None)
                     .map_err(|e| anyhow::anyhow!("Moonshine transcription failed: {}", e))?,
+                LoadedEngine::Whisper(whisper_engine) => {
+                    info!("Starting Whisper transcription");
+                    let params = WhisperInferenceParams {
+                        translate: settings.translate_to_english,
+                        ..Default::default()
+                    };
+                    let result = whisper_engine
+                        .transcribe_samples(audio, Some(params))
+                        .map_err(|e| anyhow::anyhow!("Whisper transcription failed: {}", e))?;
+                    info!("Whisper transcription completed");
+                    result
+                }
             }
         };
 

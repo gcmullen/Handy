@@ -20,6 +20,7 @@ Before you begin, ensure you have the following installed:
 - [Rust](https://rustup.rs/) (latest stable)
 - [Bun](https://bun.sh/) package manager
 - Platform-specific build tools (see [BUILD.md](BUILD.md))
+- **Windows GPU development (optional):** [CUDA Toolkit 12.x](https://developer.nvidia.com/cuda-downloads) and [cuDNN 9.x](https://developer.nvidia.com/cudnn-downloads) with `CUDA_PATH` and `CUDNN_PATH` environment variables set. Required to develop and test GPU Parakeet models.
 
 ### Setting Up Your Development Environment
 
@@ -266,6 +267,7 @@ In your PR description, please include:
 - Verify on multiple platforms if possible
 - Test with different audio devices
 - Try various transcription scenarios
+- Test both CPU and GPU model variants when making model-related changes (GPU models require CUDA/cuDNN on Windows)
 
 **Building for Production:**
 

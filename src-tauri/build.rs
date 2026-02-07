@@ -2,9 +2,110 @@ fn main() {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     build_apple_intelligence_bridge();
 
+    #[cfg(target_os = "windows")]
+    copy_ort_dlls();
+
     generate_tray_translations();
 
     tauri_build::build()
+}
+
+/// Copy ONNX Runtime DLLs to resources/gpu-deps/ for bundling.
+///
+/// Only copies onnxruntime*.dll files (not CUDA/cuDNN which are system prerequisites).
+/// In CI, the workflow downloads and places the DLLs directly in src-tauri/resources/gpu-deps/.
+#[cfg(target_os = "windows")]
+fn copy_ort_dlls() {
+    use std::fs;
+    use std::path::Path;
+
+    // Look for ONNX Runtime GPU DLLs in common locations
+    let ort_paths = [
+        "../.onnxruntime/onnxruntime-win-x64-gpu-1.22.0/lib",
+        "../../.onnxruntime/onnxruntime-win-x64-gpu-1.22.0/lib",
+    ];
+
+    let gpu_deps_dir = Path::new("resources/gpu-deps");
+
+    // Skip if gpu-deps already has ONNX Runtime DLLs (likely populated by CI)
+    if gpu_deps_dir.exists() {
+        let has_ort_dlls = fs::read_dir(gpu_deps_dir)
+            .map(|entries| {
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    e.path()
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.starts_with("onnxruntime") && n.ends_with(".dll"))
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false);
+
+        if has_ort_dlls {
+            println!("cargo:warning=ONNX Runtime DLLs already present in resources/gpu-deps/");
+            return;
+        }
+    }
+
+    // Find ONNX Runtime installation
+    let ort_lib_dir = ort_paths.iter().map(Path::new).find(|p| p.exists());
+
+    let Some(ort_lib_dir) = ort_lib_dir else {
+        println!("cargo:warning=ONNX Runtime not found locally. DLLs will be provided by CI or manual setup.");
+        return;
+    };
+
+    // Create gpu-deps directory
+    if let Err(e) = fs::create_dir_all(gpu_deps_dir) {
+        println!("cargo:warning=Failed to create gpu-deps directory: {}", e);
+        return;
+    }
+
+    // Copy only onnxruntime*.dll files (not CUDA/cuDNN — those are system prerequisites)
+    let entries = match fs::read_dir(ort_lib_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            println!(
+                "cargo:warning=Failed to read ONNX Runtime lib directory: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let mut copied_count = 0;
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        let is_ort_dll = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| {
+                n.starts_with("onnxruntime")
+                    && n.ends_with(".dll")
+                    && !n.contains("tensorrt")
+            })
+            .unwrap_or(false);
+
+        if is_ort_dll {
+            let filename = path.file_name().unwrap();
+            let dest = gpu_deps_dir.join(filename);
+
+            if let Err(e) = fs::copy(&path, &dest) {
+                println!("cargo:warning=Failed to copy {}: {}", path.display(), e);
+            } else {
+                copied_count += 1;
+            }
+        }
+    }
+
+    if copied_count > 0 {
+        println!(
+            "cargo:warning=Copied {} ONNX Runtime DLLs to resources/gpu-deps/",
+            copied_count
+        );
+    }
+
+    println!("cargo:rerun-if-changed=resources/gpu-deps");
 }
 
 /// Generate tray menu translations from frontend locale files.

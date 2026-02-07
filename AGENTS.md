@@ -50,7 +50,7 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri (R
 - `lib.rs` - Main application entry point with Tauri setup, tray menu, and managers
 - `managers/` - Core business logic managers:
   - `audio.rs` - Audio recording and device management
-  - `model.rs` - Whisper model downloading and management
+  - `model.rs` - Model downloading and management (Parakeet, Whisper, Moonshine)
   - `transcription.rs` - Speech-to-text processing pipeline
 - `audio_toolkit/` - Low-level audio processing:
   - `audio/` - Device enumeration, recording, resampling
@@ -73,13 +73,15 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri (R
 
 **Command-Event Architecture:** Frontend communicates with backend via Tauri commands, backend sends updates via events.
 
-**Pipeline Processing:** Audio → VAD → Whisper → Text output with configurable components at each stage.
+**Pipeline Processing:** Audio → VAD → Engine (Parakeet CPU/GPU, Whisper, or Moonshine) → Text output with configurable components at each stage.
 
 ### Technology Stack
 
 **Core Libraries:**
 
-- `whisper-rs` - Local Whisper inference with GPU acceleration
+- `whisper-rs` - Local Whisper inference (Small/Medium/Turbo/Large) with GPU acceleration
+- `transcription-rs` - CPU-optimized Parakeet inference (V2/V3 INT8)
+- `ort` (ONNX Runtime) - GPU-accelerated Parakeet inference (V2/V3 FP32) with CUDA support
 - `cpal` - Cross-platform audio I/O
 - `vad-rs` - Voice Activity Detection
 - `rdev` - Global keyboard shortcuts
@@ -89,15 +91,15 @@ Handy is a cross-platform desktop speech-to-text application built with Tauri (R
 **Platform-Specific Features:**
 
 - macOS: Metal acceleration for Whisper, accessibility permissions
-- Windows: Vulkan acceleration, code signing
+- Windows: Vulkan acceleration, code signing. CUDA/cuDNN required for GPU Parakeet models (runtime detection via `CUDA_PATH`/`CUDNN_PATH` env vars)
 - Linux: OpenBLAS + Vulkan acceleration
 
 ### Application Flow
 
 1. **Initialization:** App starts minimized to tray, loads settings, initializes managers
-2. **Model Setup:** First-run downloads preferred Whisper model (Small/Medium/Turbo/Large)
+2. **Model Setup:** First-run recommends Parakeet V3 (CPU); users can choose from Parakeet V2/V3 (CPU/GPU), Whisper (Small/Medium/Turbo/Large), or Moonshine Base
 3. **Recording:** Global shortcut triggers audio recording with VAD filtering
-4. **Processing:** Audio sent to Whisper model for transcription
+4. **Processing:** Audio sent to selected model engine for transcription
 5. **Output:** Text pasted to active application via system clipboard
 
 ### Settings System
@@ -106,7 +108,7 @@ Settings are stored using Tauri's store plugin with reactive updates:
 
 - Keyboard shortcuts (configurable, supports push-to-talk)
 - Audio devices (microphone/output selection)
-- Model preferences (Small/Medium/Turbo/Large Whisper variants)
+- Model preferences (Parakeet V2/V3 CPU/GPU, Whisper Small/Medium/Turbo/Large, Moonshine Base)
 - Audio feedback and translation options
 
 ### Single Instance Architecture

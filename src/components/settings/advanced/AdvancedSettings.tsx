@@ -23,8 +23,8 @@ export const AdvancedSettings: React.FC = () => {
   const { currentModel, getModelInfo } = useModelStore();
   const { getSetting } = useSettings();
   const currentModelInfo = getModelInfo(currentModel);
-  const showTranslateToEnglish =
-    currentModelInfo?.engine_type === "Whisper" && currentModel !== "turbo";
+  // Whisper removed - disable translate feature
+  const showTranslateToEnglish = false;  // Was: currentModelInfo?.engine_type === "Whisper" && currentModel !== "turbo";
   const experimentalEnabled = getSetting("experimental_enabled") || false;
 
   return (

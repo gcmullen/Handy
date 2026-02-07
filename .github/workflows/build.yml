@@ -257,6 +257,42 @@ jobs:
           fi
           echo "platform=${patched_platform}" >> $GITHUB_OUTPUT
 
+      - name: Download ONNX Runtime GPU DLLs (Windows x64)
+        if: contains(inputs.platform, 'windows') && !contains(inputs.target, 'aarch64')
+        shell: pwsh
+        run: |
+          $ortVersion = "1.22.0"
+          $ortUrl = "https://github.com/microsoft/onnxruntime/releases/download/v$ortVersion/onnxruntime-win-x64-gpu-$ortVersion.zip"
+          $ortZip = "onnxruntime-gpu.zip"
+          $gpuDepsDir = "src-tauri/resources/gpu-deps"
+
+          Write-Host "Downloading ONNX Runtime GPU $ortVersion..."
+          Invoke-WebRequest -Uri $ortUrl -OutFile $ortZip
+
+          Write-Host "Extracting ONNX Runtime GPU..."
+          Expand-Archive -Path $ortZip -DestinationPath "ort-extract" -Force
+
+          Write-Host "Creating gpu-deps directory..."
+          New-Item -ItemType Directory -Force -Path $gpuDepsDir | Out-Null
+
+          # Only copy ONNX Runtime DLLs (not CUDA/cuDNN or TensorRT — those are unused/system prerequisites)
+          Write-Host "Copying ONNX Runtime DLLs to gpu-deps..."
+          $libDir = "ort-extract/onnxruntime-win-x64-gpu-$ortVersion/lib"
+          Get-ChildItem -Path $libDir -Filter "onnxruntime*.dll" | Where-Object { $_.Name -notlike "*tensorrt*" } | ForEach-Object {
+            Copy-Item $_.FullName -Destination $gpuDepsDir
+            Write-Host "  Copied: $($_.Name)"
+          }
+
+          Write-Host "Cleaning up..."
+          Remove-Item -Path $ortZip -Force
+          Remove-Item -Path "ort-extract" -Recurse -Force
+
+          Write-Host "ONNX Runtime DLLs ready for bundling:"
+          Get-ChildItem -Path $gpuDepsDir | ForEach-Object {
+            $size = [math]::Round($_.Length / 1MB, 2)
+            Write-Host "  $($_.Name) ($size MB)"
+          }
+
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
         env:

@@ -29,6 +29,7 @@ dist-ssr
 /target/
 recording_*
 .crush/
+.onnxruntime/
 
 # Playwright
 playwright-report/

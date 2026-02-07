@@ -21,15 +21,17 @@ Handy isn't trying to be the best speech-to-text app—it's trying to be the mos
 
 1. **Press** a configurable keyboard shortcut to start/stop recording (or use push-to-talk mode)
 2. **Speak** your words while the shortcut is active
-3. **Release** and Handy processes your speech using Whisper
+3. **Release** and Handy processes your speech locally
 4. **Get** your transcribed text pasted directly into whatever app you're using
 
 The process is entirely local:
 
 - Silence is filtered using VAD (Voice Activity Detection) with Silero
 - Transcription uses your choice of models:
-  - **Whisper models** (Small/Medium/Turbo/Large) with GPU acceleration when available
-  - **Parakeet V3** - CPU-optimized model with excellent performance and automatic language detection
+  - **Parakeet V2/V3 (CPU)** — Quantized INT8 models for CPU inference, available on all platforms
+  - **Parakeet V2/V3 (GPU)** — Full-precision FP32 models with CUDA acceleration (Windows, requires NVIDIA GPU + CUDA/cuDNN)
+  - **Whisper** (Small/Medium/Turbo/Large) — Multilingual models with GPU acceleration when available
+  - **Moonshine Base** — Lightweight, fast, English-only model
 - Works on Windows, macOS, and Linux
 
 ## Quick Start
@@ -132,12 +134,25 @@ The following are recommendations for running Handy on your own machine. If you 
 - **Linux**: Intel, AMD, or NVIDIA GPU
   - Ubuntu 22.04, 24.04
 
-**For Parakeet V3 Model:**
+**For Parakeet CPU Models (V2/V3 INT8):**
 
-- **CPU-only operation** - runs on a wide variety of hardware
+- **CPU-only operation** — runs on a wide variety of hardware
 - **Minimum**: Intel Skylake (6th gen) or equivalent AMD processors
 - **Performance**: ~5x real-time speed on mid-range hardware (tested on i5)
-- **Automatic language detection** - no manual language selection required
+- **Parakeet V3**: Automatic language detection (25 languages)
+- **Parakeet V2**: English only
+
+**For Parakeet GPU Models (V2/V3 FP32) — Windows Only:**
+
+- **NVIDIA GPU** with CUDA support
+- **[CUDA Toolkit 12.x](https://developer.nvidia.com/cuda-downloads)** — must be installed and `CUDA_PATH` environment variable set
+- **[cuDNN 9.x](https://developer.nvidia.com/cudnn-downloads)** — must be installed and `CUDNN_PATH` environment variable set
+- GPU models only appear in the model selector when both `CUDA_PATH` and `CUDNN_PATH` are detected at runtime
+
+**For Moonshine Base:**
+
+- **CPU-only operation** — very lightweight (58 MB), English only
+- Runs on virtually any hardware
 
 ## Roadmap & Active Development
 
@@ -212,10 +227,21 @@ Download the models you want from below
 - Turbo (1600 MB): `https://blob.handy.computer/ggml-large-v3-turbo.bin`
 - Large (1100 MB): `https://blob.handy.computer/ggml-large-v3-q5_0.bin`
 
-**Parakeet Models (compressed archives):**
+**Parakeet CPU Models (compressed archives):**
 
-- V2 (473 MB): `https://blob.handy.computer/parakeet-v2-int8.tar.gz`
-- V3 (478 MB): `https://blob.handy.computer/parakeet-v3-int8.tar.gz`
+- V2 CPU (661 MB): `https://blob.handy.computer/parakeet-v2-int8.tar.gz`
+- V3 CPU (478 MB): `https://blob.handy.computer/parakeet-v3-int8.tar.gz`
+
+**Parakeet GPU Models (downloaded from HuggingFace — requires CUDA/cuDNN):**
+
+GPU models are downloaded as individual files from HuggingFace. Handy handles this automatically when CUDA is detected. For manual installation, download all files from these repositories and place them in the correctly named directory:
+
+- V2 GPU (~2500 MB): [istupakov/parakeet-tdt-0.6b-v2-onnx](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx)
+- V3 GPU (~2550 MB): [istupakov/parakeet-tdt-0.6b-v3-onnx](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx)
+
+**Moonshine Model (compressed archive):**
+
+- Moonshine Base (58 MB): `https://blob.handy.computer/moonshine-base.tar.gz`
 
 #### Step 4: Install Models
 
@@ -231,30 +257,33 @@ Simply place the `.bin` file directly into the `models` directory:
 └── ggml-large-v3-q5_0.bin
 ```
 
-**For Parakeet Models (.tar.gz archives):**
+**For Parakeet / Moonshine Models (.tar.gz archives or HuggingFace):**
 
-1. Extract the `.tar.gz` file
+1. Extract the `.tar.gz` file (or download individual files from HuggingFace for GPU models)
 2. Place the **extracted directory** into the `models` folder
 3. The directory must be named exactly as follows:
-   - **Parakeet V2**: `parakeet-tdt-0.6b-v2-int8`
-   - **Parakeet V3**: `parakeet-tdt-0.6b-v3-int8`
+   - **Parakeet V2 (CPU)**: `parakeet-tdt-0.6b-v2-int8`
+   - **Parakeet V3 (CPU)**: `parakeet-tdt-0.6b-v3-int8`
+   - **Parakeet V2 (GPU)**: `parakeet-tdt-0.6b-v2-fp32`
+   - **Parakeet V3 (GPU)**: `parakeet-tdt-0.6b-v3-fp32`
+   - **Moonshine Base**: `moonshine-base`
 
 Final structure should look like:
 
 ```
 {app_data_dir}/models/
-├── parakeet-tdt-0.6b-v2-int8/     (directory with model files inside)
-│   ├── (model files)
-│   └── (config files)
-└── parakeet-tdt-0.6b-v3-int8/     (directory with model files inside)
-    ├── (model files)
-    └── (config files)
+├── parakeet-tdt-0.6b-v2-int8/     (CPU, from tar.gz)
+├── parakeet-tdt-0.6b-v3-int8/     (CPU, from tar.gz)
+├── parakeet-tdt-0.6b-v2-fp32/     (GPU, from HuggingFace)
+├── parakeet-tdt-0.6b-v3-fp32/     (GPU, from HuggingFace)
+└── moonshine-base/                 (from tar.gz)
 ```
 
 **Important Notes:**
 
-- For Parakeet models, the extracted directory name **must** match exactly as shown above
-- Do not rename the `.bin` files for Whisper models—use the exact filenames from the download URLs
+- For Parakeet and Moonshine models, the extracted directory name **must** match exactly as shown above
+- Do not rename the `.bin` files for Whisper models — use the exact filenames from the download URLs
+- GPU Parakeet models will only appear in the model selector when `CUDA_PATH` and `CUDNN_PATH` environment variables are set
 - After placing the files, restart Handy to detect the new models
 
 #### Step 5: Verify Installation

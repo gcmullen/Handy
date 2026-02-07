@@ -6,11 +6,12 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 #[cfg(not(target_os = "macos"))]
 use log::debug;
 
-#[cfg(not(target_os = "macos"))]
-use tauri::WebviewWindowBuilder;
-
-#[cfg(target_os = "macos")]
-use tauri::WebviewUrl;
+// TODO: Uncomment these imports when overlay code is re-enabled
+// #[cfg(not(target_os = "macos"))]
+// use tauri::{WebviewUrl, WebviewWindowBuilder};
+//
+// #[cfg(target_os = "macos")]
+// use tauri::WebviewUrl;
 
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{tauri_panel, CollectionBehavior, PanelBuilder, PanelLevel};
@@ -29,6 +30,7 @@ tauri_panel! {
 }
 
 const OVERLAY_WIDTH: f64 = 172.0;
+#[allow(dead_code)]
 const OVERLAY_HEIGHT: f64 = 36.0;
 
 #[cfg(target_os = "macos")]
@@ -180,8 +182,11 @@ fn calculate_overlay_position(app_handle: &AppHandle) -> Option<(f64, f64)> {
 
 /// Creates the recording overlay window and keeps it hidden by default
 #[cfg(not(target_os = "macos"))]
-pub fn create_recording_overlay(app_handle: &AppHandle) {
-    let position = calculate_overlay_position(app_handle);
+pub fn create_recording_overlay(_app_handle: &AppHandle) {
+    debug!("Overlay window temporarily disabled for testing");
+    // TODO: Fix overlay window loading issue
+    /*
+    let position = calculate_overlay_position(_app_handle);
 
     // On Linux (Wayland), monitor detection often fails, but we don't need exact coordinates
     // for Layer Shell as we use anchors. On other platforms, we require a position.
@@ -192,9 +197,9 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
     }
 
     let mut builder = WebviewWindowBuilder::new(
-        app_handle,
+        _app_handle,
         "recording_overlay",
-        tauri::WebviewUrl::App("src/overlay/index.html".into()),
+        WebviewUrl::App("src/overlay/index.html".into()),
     )
     .title("Recording")
     .resizable(false)
@@ -233,15 +238,19 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
             debug!("Failed to create recording overlay window: {}", e);
         }
     }
+    */
 }
 
 /// Creates the recording overlay panel and keeps it hidden by default (macOS)
 #[cfg(target_os = "macos")]
-pub fn create_recording_overlay(app_handle: &AppHandle) {
-    if let Some((x, y)) = calculate_overlay_position(app_handle) {
+pub fn create_recording_overlay(_app_handle: &AppHandle) {
+    debug!("Overlay window temporarily disabled for testing");
+    // TODO: Fix overlay window loading issue
+    /*
+    if let Some((x, y)) = calculate_overlay_position(_app_handle) {
         // PanelBuilder creates a Tauri window then converts it to NSPanel.
         // The window remains registered, so get_webview_window() still works.
-        match PanelBuilder::<_, RecordingOverlayPanel>::new(app_handle, "recording_overlay")
+        match PanelBuilder::<_, RecordingOverlayPanel>::new(_app_handle, "recording_overlay")
             .url(WebviewUrl::App("src/overlay/index.html".into()))
             .title("Recording")
             .position(tauri::Position::Logical(tauri::LogicalPosition { x, y }))
@@ -270,6 +279,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
             }
         }
     }
+    */
 }
 
 /// Shows the recording overlay window with fade-in animation

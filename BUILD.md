@@ -23,6 +23,12 @@ This guide covers how to set up the development environment and build Handy from
 - Visual Studio 2019/2022 with C++ development tools
 - Or Visual Studio Build Tools 2019/2022
 
+**For GPU Parakeet model support (optional):**
+
+- [CUDA Toolkit 12.x](https://developer.nvidia.com/cuda-downloads)
+- [cuDNN 9.x](https://developer.nvidia.com/cudnn-downloads)
+- Set environment variables: `CUDA_PATH` and `CUDNN_PATH` pointing to their install directories
+
 #### Linux
 
 - Build essentials
@@ -66,3 +72,25 @@ bun install
 ```bash
 bun tauri dev
 ```
+
+## Windows Build Notes
+
+The Windows build target is `["nsis"]`, producing an NSIS-based installer. The installer includes prerequisite checks that detect whether CUDA Toolkit and cuDNN are installed, and informs users if they are missing (GPU Parakeet models require them).
+
+CUDA and cuDNN are **not bundled** with the installer — they are system prerequisites that users install separately. This keeps the installer size manageable (~94 MB vs ~2.2 GB if bundled).
+
+## GPU Development (Windows)
+
+To develop and test GPU Parakeet models:
+
+1. Install [CUDA Toolkit 12.x](https://developer.nvidia.com/cuda-downloads) and [cuDNN 9.x](https://developer.nvidia.com/cudnn-downloads)
+2. Set environment variables:
+   ```
+   CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.x
+   CUDNN_PATH=C:\Program Files\NVIDIA\CUDNN\v9.x
+   ```
+3. Restart your terminal/IDE so the variables take effect
+
+When both `CUDA_PATH` and `CUDNN_PATH` are set and point to valid directories, the GPU Parakeet models (V2 FP32, V3 FP32) will appear in the model selector at runtime. Without these variables, only CPU models are shown.
+
+ONNX Runtime CUDA DLLs are bundled in `src-tauri/resources/gpu-deps/` and are loaded at runtime when a GPU model is selected.

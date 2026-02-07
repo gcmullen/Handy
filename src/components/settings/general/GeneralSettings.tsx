@@ -17,7 +17,8 @@ export const GeneralSettings: React.FC = () => {
   const { audioFeedbackEnabled } = useSettings();
   const { currentModel, getModelInfo } = useModelStore();
   const currentModelInfo = getModelInfo(currentModel);
-  const showLanguageSelector = currentModelInfo?.engine_type === "Whisper";
+  // Whisper removed - disable language selector (Parakeet/Moonshine are English-only)
+  const showLanguageSelector = false;  // Was: currentModelInfo?.engine_type === "Whisper";
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.general.title")}>

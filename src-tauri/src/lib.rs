@@ -16,6 +16,7 @@ mod signal_handle;
 mod tray;
 mod tray_i18n;
 mod utils;
+#[cfg(debug_assertions)]
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
 
@@ -109,7 +110,77 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Setup GPU DLL paths on Windows so ONNX Runtime can find dependencies.
+///
+/// This adds the bundled gpu-deps directory (ONNX Runtime DLLs) to PATH and
+/// sets ORT_DYLIB_PATH. If CUDA Toolkit is installed on the system, its bin
+/// directory is also added to PATH so ONNX Runtime can find CUDA/cuDNN DLLs.
+#[cfg(target_os = "windows")]
+fn setup_gpu_dll_path(app_handle: &AppHandle) {
+    use std::env;
+    use std::path::{Path, PathBuf};
+
+    // Get the resources directory where gpu-deps is bundled (ONNX Runtime DLLs)
+    let gpu_deps_path: Option<PathBuf> = app_handle
+        .path()
+        .resolve("resources/gpu-deps", tauri::path::BaseDirectory::Resource)
+        .ok();
+
+    let Some(gpu_deps_path) = gpu_deps_path else {
+        log::debug!("GPU deps path not found in resources");
+        return;
+    };
+
+    if !gpu_deps_path.exists() {
+        log::debug!("GPU deps directory does not exist: {:?}", gpu_deps_path);
+        return;
+    }
+
+    log::info!("Setting up GPU DLL path: {:?}", gpu_deps_path);
+
+    // Build a list of paths to prepend to PATH
+    let mut extra_paths = vec![gpu_deps_path.display().to_string()];
+
+    // Add CUDA Toolkit bin directory if available (for cublas, cudart, cufft DLLs)
+    if let Ok(cuda_path) = env::var("CUDA_PATH") {
+        let cuda_bin = Path::new(&cuda_path).join("bin");
+        if cuda_bin.exists() {
+            log::info!("Adding CUDA bin to PATH: {:?}", cuda_bin);
+            extra_paths.push(cuda_bin.display().to_string());
+        }
+    }
+
+    // Add cuDNN bin directory if set separately from CUDA
+    if let Ok(cudnn_path) = env::var("CUDNN_PATH") {
+        let cudnn_bin = Path::new(&cudnn_path).join("bin");
+        if cudnn_bin.exists() {
+            log::info!("Adding cuDNN bin to PATH: {:?}", cudnn_bin);
+            extra_paths.push(cudnn_bin.display().to_string());
+        }
+    }
+
+    // Prepend all extra paths to PATH
+    if let Ok(current_path) = env::var("PATH") {
+        let new_path = format!("{};{}", extra_paths.join(";"), current_path);
+        env::set_var("PATH", &new_path);
+        log::debug!("Updated PATH with GPU directories");
+    }
+
+    // Set ORT_DYLIB_PATH to the bundled onnxruntime.dll location
+    let ort_dll_path = gpu_deps_path.join("onnxruntime.dll");
+    if ort_dll_path.exists() {
+        env::set_var("ORT_DYLIB_PATH", &ort_dll_path);
+        log::info!("Set ORT_DYLIB_PATH to {:?}", ort_dll_path);
+    } else {
+        log::debug!("onnxruntime.dll not found in gpu-deps");
+    }
+}
+
 fn initialize_core_logic(app_handle: &AppHandle) {
+    // Setup GPU DLL paths on Windows before initializing managers
+    #[cfg(target_os = "windows")]
+    setup_gpu_dll_path(app_handle);
+
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
     // after onboarding completes. This avoids triggering permission dialogs
@@ -333,7 +404,7 @@ pub fn run() {
         )
         .expect("Failed to export typescript bindings");
 
-    let mut builder = tauri::Builder::default().plugin(
+    let builder = tauri::Builder::default().plugin(
         LogBuilder::new()
             .level(log::LevelFilter::Trace) // Set to most verbose level globally
             .max_file_size(500_000)
@@ -358,9 +429,10 @@ pub fn run() {
     );
 
     #[cfg(target_os = "macos")]
-    {
-        builder = builder.plugin(tauri_nspanel::init());
-    }
+    let builder = builder.plugin(tauri_nspanel::init());
+
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder;
 
     builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
