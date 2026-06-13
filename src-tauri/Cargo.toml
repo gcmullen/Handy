@@ -112,7 +112,7 @@ transcribe-rs = { version = "0.3.3", features = ["whisper-vulkan"] }
 [patch.crates-io]
 # Our transcribe-rs fork (feat/cuda-fp32 @ 0.3.11): CUDA execution provider for Parakeet
 # (load-dynamic) + whisper GPU device auto-selection. Pinned to a tag for reproducible builds.
-transcribe-rs = { git = "https://github.com/gcmullen/transcribe-rs.git", tag = "v0.3.11-cuda" }
+transcribe-rs = { git = "https://github.com/gcmullen/transcribe-rs.git", tag = "v0.3.11-cuda.2" }
 # Patched cmake-rs (vendored in-repo at src-tauri/vendor/cmake-rs): drops VSINSTALLDIR
 # under the Ninja generator so CMake doesn't infer a VS "instance" (which Ninja rejects)
 # — lets whisper.cpp's vulkan build with Ninja, sidestepping the MSBuild .rule-batch +
