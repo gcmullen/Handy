@@ -90,7 +90,7 @@ tauri-plugin-updater = "2.10.0"
 [target.'cfg(windows)'.dependencies]
 # whisper-vulkan built with portable cmake 3.31 (set CMAKE=...\cmake-3.31\...\cmake.exe);
 # cmake 4 + the new Vulkan SDK break whisper.cpp's vulkan-shaders-gen ExternalProject.
-transcribe-rs = { version = "0.3.3", features = ["whisper-vulkan", "whisper-cuda", "ort-cuda", "ort-load-dynamic"] }
+transcribe-rs = { version = "0.3.3", features = ["whisper-vulkan", "ort-cuda", "ort-load-dynamic"] }
 windows = { version = "0.61.3", features = [
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
