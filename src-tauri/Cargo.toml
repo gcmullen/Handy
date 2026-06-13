@@ -88,7 +88,9 @@ tauri-plugin-single-instance = "2.3.2"
 tauri-plugin-updater = "2.10.0"
 
 [target.'cfg(windows)'.dependencies]
-transcribe-rs = { version = "0.3.3", features = ["whisper-vulkan", "ort-directml"] }
+# whisper-vulkan built with portable cmake 3.31 (set CMAKE=...\cmake-3.31\...\cmake.exe);
+# cmake 4 + the new Vulkan SDK break whisper.cpp's vulkan-shaders-gen ExternalProject.
+transcribe-rs = { version = "0.3.3", features = ["whisper-vulkan", "whisper-cuda", "ort-cuda", "ort-load-dynamic"] }
 windows = { version = "0.61.3", features = [
   "Win32_Media_Audio_Endpoints",
   "Win32_System_Com_StructuredStorage",
@@ -108,6 +110,14 @@ gtk = "0.18"
 transcribe-rs = { version = "0.3.3", features = ["whisper-vulkan"] }
 
 [patch.crates-io]
+# Our transcribe-rs fork (feat/cuda-fp32 @ 0.3.11): CUDA execution provider for Parakeet
+# (load-dynamic) + whisper GPU device auto-selection. Pinned to a tag for reproducible builds.
+transcribe-rs = { git = "https://github.com/gcmullen/transcribe-rs.git", tag = "v0.3.11-cuda" }
+# Patched cmake-rs (vendored in-repo at src-tauri/vendor/cmake-rs): drops VSINSTALLDIR
+# under the Ninja generator so CMake doesn't infer a VS "instance" (which Ninja rejects)
+# — lets whisper.cpp's vulkan build with Ninja, sidestepping the MSBuild .rule-batch +
+# space-in-path failure. No upstream cmake version (<=0.1.58) fixes this, so we patch.
+cmake = { path = "vendor/cmake-rs" }
 tauri-runtime = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
 tauri-runtime-wry = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
 tauri-utils = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }

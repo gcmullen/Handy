@@ -433,7 +433,10 @@ pub struct AppSettings {
 }
 
 fn default_model() -> String {
-    "".to_string()
+    // Default to the NVIDIA GPU Parakeet V2 (English, punctuated/cased, ~195x RTFx).
+    // On non-NVIDIA machines this id isn't registered, so Handy gracefully falls back
+    // to onboarding (which still features the other recommended models).
+    "parakeet-tdt-0.6b-v2-fp16".to_string()
 }
 
 fn default_always_on_microphone() -> bool {

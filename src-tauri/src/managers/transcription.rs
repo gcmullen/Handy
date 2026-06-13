@@ -309,8 +309,18 @@ impl TranscriptionManager {
                 LoadedEngine::Whisper(engine)
             }
             EngineType::Parakeet => {
+                // GPU model dirs carry an `-fp16` id and hold fp16-weight .onnx files;
+                // int8 dirs (CPU path) use Int8. fp16 weights have fp32 I/O, so they load
+                // through the FP32 path: Quantization::FP32 selects the plain
+                // `encoder-model.onnx` (not `.int8.onnx`), which is where the fp16 weights
+                // live. Quantization must match the downloaded files.
+                let quant = if model_id.ends_with("-fp16") {
+                    Quantization::FP32
+                } else {
+                    Quantization::Int8
+                };
                 let engine =
-                    ParakeetModel::load(&model_path, &Quantization::Int8).map_err(|e| {
+                    ParakeetModel::load(&model_path, &quant).map_err(|e| {
                         let error_msg =
                             format!("Failed to load parakeet model {}: {}", model_id, e);
                         emit_loading_failed(&error_msg);
@@ -766,6 +776,16 @@ pub fn apply_accelerator_settings(app: &tauri::AppHandle) {
     };
     accel::set_ort_accelerator(ort_pref);
     info!("ORT accelerator set to: {}", ort_pref);
+
+    // ORT (CUDA EP) GPU device: default 0 = internal card (CUDA_DEVICE_ORDER is set
+    // to PCI_BUS_ID at startup). Override with HANDY_ORT_GPU_DEVICE=<n> to select
+    // another GPU — no UI yet.
+    let ort_gpu_device = std::env::var("HANDY_ORT_GPU_DEVICE")
+        .ok()
+        .and_then(|v| v.trim().parse::<i32>().ok())
+        .unwrap_or(0);
+    accel::set_ort_gpu_device(ort_gpu_device);
+    info!("ORT GPU device set to: {}", ort_gpu_device);
 }
 
 #[derive(Serialize, Clone, Debug, Type)]

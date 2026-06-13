@@ -137,7 +137,136 @@ fn should_force_show_permissions_window(app: &AppHandle) -> bool {
     false
 }
 
+/// On Windows with the CUDA execution provider, prepend the CUDA Toolkit and
+/// cuDNN DLL directories to PATH so ONNX Runtime's CUDA provider can load its
+/// dependencies (cudart, cublas, cudnn_*). cuDNN 9 nests its DLLs under a
+/// CUDA-major-version subfolder (e.g. `bin\12.9`), which is not on PATH by
+/// default — the cause of the historical `cudnn_graph64_9.dll` load failure.
+#[cfg(windows)]
+fn setup_cuda_dll_path() {
+    use std::env;
+    use std::path::Path;
+
+    // Make CUDA device indices match PCI bus order so device 0 is the internal/
+    // laptop GPU. CUDA's default FASTEST_FIRST ordering would otherwise pick the
+    // discrete desktop card. Must be set before any CUDA context is created.
+    if env::var_os("CUDA_DEVICE_ORDER").is_none() {
+        env::set_var("CUDA_DEVICE_ORDER", "PCI_BUS_ID");
+    }
+
+    let mut extra: Vec<String> = Vec::new();
+
+    // CUDA Toolkit bin (cudart64_12.dll, cublas64_12.dll, cufft64_*.dll, ...)
+    if let Ok(cuda_path) = env::var("CUDA_PATH") {
+        let bin = Path::new(&cuda_path).join("bin");
+        if bin.is_dir() {
+            extra.push(bin.display().to_string());
+        }
+    }
+
+    // cuDNN bin — prefer the CUDA 12.x subfolder (e.g. bin\12.9), highest wins.
+    if let Ok(cudnn_path) = env::var("CUDNN_PATH") {
+        let bin = Path::new(&cudnn_path).join("bin");
+        let mut added_sub = false;
+        if let Ok(entries) = std::fs::read_dir(&bin) {
+            let mut subdirs: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.is_dir()
+                        && p.file_name()
+                            .and_then(|n| n.to_str())
+                            .map(|n| n.starts_with("12"))
+                            .unwrap_or(false)
+                })
+                .collect();
+            subdirs.sort();
+            if let Some(sub) = subdirs.last() {
+                extra.push(sub.display().to_string());
+                added_sub = true;
+            }
+        }
+        if !added_sub && bin.is_dir() {
+            extra.push(bin.display().to_string());
+        }
+    }
+
+    if extra.is_empty() {
+        log::warn!(
+            "CUDA_PATH/CUDNN_PATH not found; the CUDA execution provider may fail to load"
+        );
+        return;
+    }
+
+    if let Ok(current) = env::var("PATH") {
+        env::set_var("PATH", format!("{};{}", extra.join(";"), current));
+        log::info!("Prepended CUDA/cuDNN dirs to PATH: {}", extra.join("; "));
+    }
+}
+
+/// On Windows the `ort` crate is built with `load-dynamic`, so it resolves
+/// ONNX Runtime at runtime from `ORT_DYLIB_PATH`. We ship our own official ORT
+/// 1.26 DLLs (the pyke download-binaries lack sm_120/Blackwell kernels).
+///
+/// Resolution order: (1) respect an existing `ORT_DYLIB_PATH` (dev override);
+/// (2) the bundled `resources/onnxruntime/onnxruntime.dll`; (3) warn.
+#[cfg(windows)]
+fn setup_ort_dylib(app_handle: &AppHandle) {
+    use std::env;
+    use tauri::Manager;
+
+    if env::var_os("ORT_DYLIB_PATH").is_some() {
+        log::info!("ORT_DYLIB_PATH already set (dev override): {:?}", env::var("ORT_DYLIB_PATH").ok());
+        return;
+    }
+
+    if let Ok(dll) = app_handle
+        .path()
+        .resolve("onnxruntime/onnxruntime.dll", tauri::path::BaseDirectory::Resource)
+    {
+        if dll.exists() {
+            // Make the bundled providers_cuda/providers_shared next to it resolvable too.
+            if let Some(dir) = dll.parent() {
+                if let Ok(cur) = env::var("PATH") {
+                    env::set_var("PATH", format!("{};{}", dir.display(), cur));
+                }
+            }
+            env::set_var("ORT_DYLIB_PATH", &dll);
+            log::info!("ORT_DYLIB_PATH set to bundled DLL: {}", dll.display());
+            return;
+        }
+    }
+
+    // Dev fallback: onnxruntime.dll placed next to the executable.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let dll = dir.join("onnxruntime.dll");
+            if dll.exists() {
+                if let Ok(cur) = env::var("PATH") {
+                    env::set_var("PATH", format!("{};{}", dir.display(), cur));
+                }
+                env::set_var("ORT_DYLIB_PATH", &dll);
+                log::info!("ORT_DYLIB_PATH set to exe-dir DLL: {}", dll.display());
+                return;
+            }
+        }
+    }
+
+    log::warn!(
+        "ORT_DYLIB_PATH is not set and no bundled onnxruntime.dll was found; the CUDA \
+         execution provider will fail to load. For development, set ORT_DYLIB_PATH to an \
+         ONNX Runtime 1.26 onnxruntime.dll before launching."
+    );
+}
+
 fn initialize_core_logic(app_handle: &AppHandle) {
+    // Ensure CUDA/cuDNN DLLs are discoverable before any ONNX session is built.
+    #[cfg(windows)]
+    setup_cuda_dll_path();
+    // Point the load-dynamic `ort` crate at our ONNX Runtime DLL.
+    #[cfg(windows)]
+    setup_ort_dylib(app_handle);
+
     // Note: Enigo (keyboard/mouse simulation) is NOT initialized here.
     // The frontend is responsible for calling the `initialize_enigo` command
     // after onboarding completes. This avoids triggering permission dialogs

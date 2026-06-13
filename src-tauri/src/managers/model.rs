@@ -288,6 +288,44 @@ impl ModelManager {
             },
         );
 
+        // Parakeet V2 — NVIDIA GPU path (CUDA EP). fp16-optimized weights (half the
+        // size of fp32, bit-identical accuracy, same speed). int8 dynamic-quant is
+        // ~13x slower on the CUDA EP, so not used. The `-fp16` id routes the loader to
+        // its FP32 (.onnx) path: fp16 weights have fp32 I/O so they load through it
+        // unchanged (selecting `encoder-model.onnx`, not `.int8.onnx`). The .tar.gz
+        // holds a single top-level dir already named to match `filename`.
+        // Only exposed when an NVIDIA GPU (CUDA driver) is present — it can't run otherwise.
+        if Self::nvidia_gpu_present() {
+            available_models.insert(
+                "parakeet-tdt-0.6b-v2-fp16".to_string(),
+                ModelInfo {
+                    id: "parakeet-tdt-0.6b-v2-fp16".to_string(),
+                    name: "Parakeet V2 (NVIDIA GPU)".to_string(),
+                    description: "English only. NVIDIA GPU acceleration. Fastest on RTX GPUs."
+                        .to_string(),
+                    filename: "parakeet-tdt-0.6b-v2-fp16".to_string(), // Directory name
+                    url: Some("https://www.dropbox.com/scl/fi/ir83wwkxh5ivbatuglh6l/parakeet-tdt-0.6b-v2-fp16.tar.gz?rlkey=qdzvw7kp0b3ueng0retsyreia&st=uzfgegbi&dl=1".to_string()),
+                    sha256: Some(
+                        "ac7a787f7f944df5edd0eaedf049fab5339844c67b9f4b9998430d2157aef558".to_string(),
+                    ),
+                    size_mb: 1179,
+                    is_downloaded: false,
+                    is_downloading: false,
+                    partial_size: 0,
+                    is_directory: true,
+                    engine_type: EngineType::Parakeet,
+                    accuracy_score: 0.85,
+                    speed_score: 0.95,
+                    supports_translation: false,
+                    // Recommended (top of onboarding) when present — i.e. on NVIDIA machines.
+                    is_recommended: true,
+                    supported_languages: vec!["en".to_string()],
+                    supports_language_selection: false,
+                    is_custom: false,
+                },
+            );
+        }
+
         // Parakeet V3 supported languages (25 EU languages + Russian/Ukrainian):
         // bg, hr, cs, da, nl, en, et, fi, fr, de, el, hu, it, lv, lt, mt, pl, pt, ro, sk, sl, es, sv, ru, uk
         let parakeet_v3_languages: Vec<String> = vec![
@@ -640,7 +678,43 @@ impl ModelManager {
 
     pub fn get_available_models(&self) -> Vec<ModelInfo> {
         let models = self.available_models.lock().unwrap();
-        models.values().cloned().collect()
+        let mut list: Vec<ModelInfo> = models.values().cloned().collect();
+        // Pin the NVIDIA GPU model to the top; everything else stable, ordered by id
+        // (HashMap iteration order is otherwise nondeterministic).
+        list.sort_by(|a, b| {
+            let rank = |m: &ModelInfo| u8::from(m.id != "parakeet-tdt-0.6b-v2-fp16");
+            rank(a).cmp(&rank(b)).then_with(|| a.id.cmp(&b.id))
+        });
+        list
+    }
+
+    /// True if a real, driver-accessible NVIDIA GPU is present *right now*.
+    ///
+    /// We ask the driver to enumerate live devices via `nvidia-smi` (ships with the
+    /// NVIDIA driver, backed by NVML). This reflects actual hardware: if the GPU was
+    /// removed but driver files (`nvcuda.dll`) linger, it reports zero devices — so we
+    /// won't show/download the GPU model on a machine that can't run it. A missing
+    /// `nvidia-smi` (no driver) likewise yields false. The NVIDIA driver itself is a
+    /// user prerequisite we can't ship; the CUDA runtime + cuDNN are what we bundle.
+    #[cfg(windows)]
+    fn nvidia_gpu_present() -> bool {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000; // don't flash a console window
+        match std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=name", "--format=csv,noheader"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .any(|l| !l.trim().is_empty()),
+            _ => false,
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn nvidia_gpu_present() -> bool {
+        false
     }
 
     pub fn get_model_info(&self, model_id: &str) -> Option<ModelInfo> {
