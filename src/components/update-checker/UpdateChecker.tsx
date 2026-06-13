@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { check } from "@tauri-apps/plugin-updater";
+import { getVersion } from "@tauri-apps/api/app";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -22,6 +23,10 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   const [showUpToDate, setShowUpToDate] = useState(false);
   const [showPortableUpdateDialog, setShowPortableUpdateDialog] =
     useState(false);
+  // Fork additions: surface versions + warn before an upstream install overwrites the GPU build
+  const [showGpuWarningDialog, setShowGpuWarningDialog] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState("");
+  const [latestVersion, setLatestVersion] = useState("");
 
   const { settings, isLoading } = useSettings();
   const settingsLoaded = !isLoading && settings !== null;
@@ -31,6 +36,12 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   const isManualCheckRef = useRef(false);
   const downloadedBytesRef = useRef(0);
   const contentLengthRef = useRef(0);
+
+  useEffect(() => {
+    getVersion()
+      .then(setCurrentVersion)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     // Wait for settings to load before doing anything
@@ -71,6 +82,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
 
       if (update) {
         setUpdateAvailable(true);
+        setLatestVersion(update.version);
         setShowUpToDate(false);
       } else {
         setUpdateAvailable(false);
@@ -153,7 +165,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   // Update status functions
   const getUpdateStatusText = () => {
     if (!updateChecksEnabled) {
-      return t("footer.updateCheckingDisabled");
+      return currentVersion ? `v${currentVersion}` : t("footer.updateCheckingDisabled");
     }
     if (isInstalling) {
       return downloadProgress > 0 && downloadProgress < 100
@@ -166,13 +178,17 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
     }
     if (isChecking) return t("footer.checkingUpdates");
     if (showUpToDate) return t("footer.upToDate");
-    if (updateAvailable) return t("footer.updateAvailableShort");
-    return t("footer.checkForUpdates");
+    const cur = currentVersion ? `v${currentVersion}` : "";
+    if (updateAvailable) {
+      return latestVersion ? `${cur} → v${latestVersion}` : t("footer.updateAvailableShort");
+    }
+    return cur || t("footer.checkForUpdates");
   };
 
   const getUpdateStatusAction = () => {
     if (!updateChecksEnabled) return undefined;
-    if (updateAvailable && !isInstalling) return installUpdate;
+    if (updateAvailable && !isInstalling)
+      return () => setShowGpuWarningDialog(true);
     if (!isChecking && !isInstalling && !updateAvailable)
       return handleManualUpdateCheck;
     return undefined;
@@ -186,7 +202,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
     <>
       {showPortableUpdateDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-bg border border-border rounded-lg p-6 max-w-md w-full mx-4 space-y-4">
+          <div className="bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4 space-y-4">
             <h2 className="text-base font-semibold">
               {t("footer.portableUpdateTitle")}
             </h2>
@@ -208,6 +224,46 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
                 }}
               >
                 {t("footer.portableUpdateButton")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showGpuWarningDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background border border-border rounded-lg p-6 max-w-md w-full mx-4 space-y-4">
+            <h2 className="text-base font-semibold">
+              {t("footer.gpuOverwriteTitle")}
+            </h2>
+            <p className="text-sm text-text/70">
+              {t("footer.gpuOverwriteMessage")}
+            </p>
+            <div className="text-sm text-text/80 space-y-1">
+              <div>
+                {t("footer.gpuOverwriteInstalled")}:{" "}
+                <span className="font-medium">v{currentVersion}</span>
+              </div>
+              <div>
+                {t("footer.gpuOverwriteUpstream")}:{" "}
+                <span className="font-medium">v{latestVersion}</span>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                className="px-3 py-1.5 text-sm rounded border border-border text-text/60 hover:bg-border/50 transition-colors"
+                onClick={() => {
+                  setShowGpuWarningDialog(false);
+                  installUpdate();
+                }}
+              >
+                {t("footer.gpuOverwriteProceed")}
+              </button>
+              <button
+                autoFocus
+                className="px-3 py-1.5 text-sm rounded bg-logo-primary text-white hover:bg-logo-primary/80 transition-colors"
+                onClick={() => setShowGpuWarningDialog(false)}
+              >
+                {t("common.close")}
               </button>
             </div>
           </div>
