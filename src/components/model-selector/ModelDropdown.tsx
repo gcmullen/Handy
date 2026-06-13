@@ -25,7 +25,7 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
   };
 
   return (
-    <div className="absolute bottom-full start-0 mb-2 w-64 max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2 z-50">
+    <div className="absolute bottom-full start-0 mb-2 min-w-[16rem] w-max max-w-[32rem] max-h-[60vh] overflow-y-auto bg-background border border-mid-gray/20 rounded-lg shadow-lg py-2 z-50">
       {downloadedModels.length > 0 ? (
         <div>
           {downloadedModels.map((model) => (
@@ -46,9 +46,9 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
                   : ""
               }`}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-sm text-text/80">
+                  <div className="text-sm text-text/80 whitespace-nowrap">
                     {getTranslatedModelName(model, t)}
                     {model.is_custom && (
                       <span className="ms-1.5 text-[10px] font-medium text-text/40 uppercase">
