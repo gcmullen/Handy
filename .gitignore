@@ -43,7 +43,8 @@ blob-report/
 # Nix build output
 result
 
-# GPU runtime DLL pack (large ORT CUDA binaries ~340MB) — bundled at package time /
-# downloaded on demand, never committed to git
+# GPU runtime DLL pack (large ORT CUDA binaries ~340MB) — fetched on demand by
+# scripts/fetch_ort_dlls.ps1 and bundled at package time, never committed to git
+/src-tauri/resources/onnxruntime/
 /src-tauri/resources/gpu-deps/
 onnxruntime*.dll

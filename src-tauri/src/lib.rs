@@ -210,6 +210,10 @@ fn setup_cuda_dll_path() {
 ///
 /// Resolution order: (1) respect an existing `ORT_DYLIB_PATH` (dev override);
 /// (2) the bundled `resources/onnxruntime/onnxruntime.dll`; (3) warn.
+///
+/// Note: `BaseDirectory::Resource` is the install root (the exe dir), and bundled
+/// resources live under its `resources/` subdir — so the resolve path must keep the
+/// `resources/` prefix (matching how the sound/icon resources are resolved).
 #[cfg(windows)]
 fn setup_ort_dylib(app_handle: &AppHandle) {
     use std::env;
@@ -222,7 +226,7 @@ fn setup_ort_dylib(app_handle: &AppHandle) {
 
     if let Ok(dll) = app_handle
         .path()
-        .resolve("onnxruntime/onnxruntime.dll", tauri::path::BaseDirectory::Resource)
+        .resolve("resources/onnxruntime/onnxruntime.dll", tauri::path::BaseDirectory::Resource)
     {
         if dll.exists() {
             // Make the bundled providers_cuda/providers_shared next to it resolvable too.
